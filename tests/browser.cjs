@@ -1,0 +1,55 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const passed=[];const check=(name,condition)=>{assert.ok(condition,name);passed.push(name);};
+ await page.goto('http://127.0.0.1:3000',{waitUntil:'networkidle'});
+ await page.screenshot({path:'/workspace/Landing-Page-Dive/review-desktop.png',fullPage:true});
+ check('Initial six cards',await page.locator('.package-card').count()===6);
+ check('No unapproved prices',!/999|4\.500|Rp/.test(await page.locator('#package-grid').innerText()));
+ await page.evaluate(()=>{const p=GOWA_CONFIG.packages[0];p.price=999000;p.priceUnit='peserta';p.priceStatus='approved';});
+ await page.locator('[data-filter=diving]').click();check('Approved price with unit displays',/999.000.*peserta/.test(await page.locator('#package-grid').innerText()));
+ await page.evaluate(()=>GOWA_CONFIG.packages[0].priceStatus='historical');await page.locator('[data-filter=diving]').click();check('Historical price never sold as active',!/999.000/.test(await page.locator('#package-grid').innerText()));
+ await page.evaluate(()=>{const p=GOWA_CONFIG.packages[0];p.priceStatus='approved';p.priceUnit=null;});await page.locator('[data-filter=diving]').click();check('Price without unit suppressed',!/999.000/.test(await page.locator('#package-grid').innerText()));
+ await page.evaluate(()=>{const p=GOWA_CONFIG.packages[0];p.priceStatus='needs_confirmation';p.price=null;});
+ 
+ await page.locator('[data-filter=snorkeling]').click();check('Snorkeling filter',await page.locator('.package-card').count()===1);
+ await page.locator('[data-filter=boat]').click();check('Boat filter',await page.locator('.package-card').count()===1);
+ await page.locator('[data-filter=all]').click();await page.locator('#show-more').click();check('Show all packages',await page.locator('.package-card').count()===12);
+ await page.locator('[data-package=samalona]').click();check('Detail modal opens',await page.locator('#detail-dialog').evaluate(d=>d.open));
+ await page.keyboard.press('Escape');check('Escape closes modal',!(await page.locator('#detail-dialog').evaluate(d=>d.open)));
+ check('Focus returns to trigger',await page.locator('[data-package=samalona]').evaluate(b=>b===document.activeElement));
+ await page.locator('[data-package=couple]').click();await page.locator('[data-choose]').click();check('Package selection reaches form',(await page.locator('#interest').inputValue())==='Samalona for Two');
+ await page.locator('#inquiry-form button[type=submit]').click();check('Empty form prevented',await page.locator('#whatsapp-ready').isHidden());
+ await page.locator('[name=name]').fill('Ayu & Budi + keluarga');
+ await page.locator('[name=date]').fill('2027-12-01');await page.locator('[name=participants]').fill('2');await page.locator('[name=message]').fill('A & B? #laut + karang 😊');
+ await page.locator('#inquiry-form button[type=submit]').click();
+ const href=await page.locator('#whatsapp-ready').getAttribute('href');
+ check('Valid form prepares correct WhatsApp destination',href.startsWith('https://wa.me/6281524677335?text='));
+ const msg=new URL(href).searchParams.get('text');check('WhatsApp encoding roundtrip',msg.includes('A & B? #laut + karang 😊')&&msg.includes('Ayu & Budi + keluarga'));
+ check('Not falsely sent',/belum terkirim/.test(await page.locator('#form-status').innerText()));
+ await page.locator('[name=participants]').fill('3');check('Editing invalidates stale message',await page.locator('#whatsapp-ready').isHidden());
+ await page.locator('[name=date]').fill('2020-01-01');await page.locator('#inquiry-form button[type=submit]').click();check('Past date blocked',await page.locator('#whatsapp-ready').isHidden());
+ await page.locator('[name=date]').fill('2027-12-01');await page.locator('[name=participants]').fill('0');await page.locator('#inquiry-form button[type=submit]').click();check('Zero participants blocked',await page.locator('#whatsapp-ready').isHidden());
+ await page.locator('[data-gallery]').first().click();check('Lightbox opens',await page.locator('#gallery-dialog').evaluate(d=>d.open));await page.keyboard.press('Escape');
+ await page.locator('#faq-list summary').first().click();check('FAQ expands',await page.locator('#faq-list details').first().evaluate(d=>d.open));
+ const badAnchors=await page.locator('a[href^="#"]').evaluateAll(as=>as.filter(a=>!document.getElementById(a.hash.slice(1))).map(a=>a.hash));check('All section anchors resolve',badAnchors.length===0);
+ check('All images loaded',await page.locator('img').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0)));
+ await page.locator('.package-card img').first().evaluate(img=>{img.src='/missing-test-image.webp';});await page.waitForTimeout(200);check('Broken-image fallback shown',await page.locator('.package-card img').first().evaluate(i=>i.classList.contains('image-failed')));
+ for(const width of [320,375,390,768,1024,1440]){
+  await page.setViewportSize({width,height:900});
+  check(`No horizontal overflow at ${width}px`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ }
+ await page.setViewportSize({width:390,height:844});await page.goto('http://127.0.0.1:3000',{waitUntil:'networkidle'});
+ await page.locator('.menu-toggle').click();check('Mobile menu opens',await page.locator('#navigation').evaluate(n=>n.classList.contains('open')));
+ await page.locator('#navigation a').first().click();check('Mobile menu closes after navigation',await page.locator('.menu-toggle').getAttribute('aria-expanded')==='false');
+ await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(400);await page.screenshot({path:'/workspace/Landing-Page-Dive/review-mobile.png',fullPage:true});
+ await page.emulateMedia({reducedMotion:'reduce'});check('Reduced motion honored',await page.evaluate(()=>getComputedStyle(document.documentElement).scrollBehavior)==='auto');
+ await page.addScriptTag({url:'http://127.0.0.1:3000/app.js'});check('Script duplicate init protected',await page.locator('#interest option').count()===16);
+ check('No JavaScript runtime errors',errors.length===0);
+ fs.writeFileSync('/workspace/Landing-Page-Dive/tests/results.json',JSON.stringify({passed,errors,date:new Date().toISOString()},null,2));
+ console.log(`${passed.length} checks passed`,passed);await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
