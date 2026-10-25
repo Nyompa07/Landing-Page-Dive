@@ -8,7 +8,7 @@ File `Code.gs` sudah menargetkan spreadsheet yang Anda berikan (`1lxIrSflXGuPCQi
 4. Pilih **Deploy → New deployment → Web app**.
 5. Atur **Execute as: Me** dan akses ke **Anyone**. Akses publik diperlukan agar pengunjung halaman dapat mengirim inquiry tanpa login Google.
 6. Klik **Deploy**, setujui izin Spreadsheet saat Google meminta. Salin URL yang berakhir `/exec` — jangan gunakan URL `/dev`.
-7. Buka `revision-v2/packages.js`, ganti `PASTE_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE` dengan URL `/exec` tadi. Jangan memasukkan URL editor spreadsheet ke field ini.
+7. Buka `revision-v3/packages.js`, ganti `PASTE_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE` dengan URL `/exec` tadi. Jangan memasukkan URL editor spreadsheet ke field ini.
 8. Build ulang tema dengan `.venv/bin/python scripts/build_theme.py`, lalu unggah `blogger-theme.xml` ke blog uji.
 9. Kirim satu inquiry uji. Periksa tab `Inquiry` pada Sheet: baris harus berisi timestamp, status `New`, sumber, detail trip, dan pesan.
 
